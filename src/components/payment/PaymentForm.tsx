@@ -5,12 +5,15 @@ import { motion } from 'framer-motion';
 import type { PricingPlan } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { usePayment } from './usePayment';
+import { supabase } from '@/lib/supabase';
 
 interface PaymentFormProps {
   plan: PricingPlan;
   onSuccess: () => void;
-  onError: (error: string) => void;
+  onError: (message: string) => void;
 }
+
+const isDevelopment = import.meta.env.DEV;
 
 export function PaymentForm({ plan, onSuccess, onError }: PaymentFormProps) {
   const stripe = useStripe();
@@ -41,6 +44,12 @@ export function PaymentForm({ plan, onSuccess, onError }: PaymentFormProps) {
     setLoading(true);
 
     try {
+      // Ensure user session is valid
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Please sign in again to continue');
+      }
+
       // Get client secret
       const clientSecret = await createPaymentIntent(plan, user.id);
 
@@ -60,7 +69,7 @@ export function PaymentForm({ plan, onSuccess, onError }: PaymentFormProps) {
         clientSecret,
         confirmParams: {
           return_url: `${window.location.origin}/dashboard?success=true`,
-          receipt_email: user.email, // Add email for receipt
+          receipt_email: user.email,
         },
       });
 
@@ -71,7 +80,8 @@ export function PaymentForm({ plan, onSuccess, onError }: PaymentFormProps) {
       onSuccess();
     } catch (err) {
       const error = err as Error;
-      onError(error.message || 'Payment failed. Please try again.');
+      console.error('Payment error:', error);
+      onError(isDevelopment ? error.message : 'Payment failed. Please try again.');
     } finally {
       setLoading(false);
     }

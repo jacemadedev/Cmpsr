@@ -55,6 +55,10 @@ export function StripeProvider({ children }: StripeProviderProps) {
     amount: 1000,
     payment_method_types: ['card'],
     loader: 'auto' as const,
+    wallets: {
+      applePay: 'never',
+      googlePay: 'never',
+    },
   };
 
   return (

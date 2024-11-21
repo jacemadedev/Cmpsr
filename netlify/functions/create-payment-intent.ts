@@ -1,9 +1,15 @@
 import { Handler } from '@netlify/functions';
 import Stripe from 'stripe';
+import { createClient } from '@supabase/supabase-js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
 });
+
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL!,
+  process.env.VITE_SUPABASE_ANON_KEY!
+);
 
 export const handler: Handler = async (event) => {
   const headers = {
@@ -40,6 +46,17 @@ export const handler: Handler = async (event) => {
       };
     }
 
+    // Get user email from Supabase
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !userData?.email) {
+      throw new Error('User not found or missing email');
+    }
+
     // Get price from Stripe
     const price = await stripe.prices.retrieve(priceId);
     if (!price?.unit_amount) {
@@ -48,12 +65,12 @@ export const handler: Handler = async (event) => {
 
     // Create or get customer
     let customer;
-    const customers = await stripe.customers.list({ email: userId });
+    const customers = await stripe.customers.list({ email: userData.email });
     if (customers.data.length > 0) {
       customer = customers.data[0];
     } else {
       customer = await stripe.customers.create({
-        email: userId,
+        email: userData.email,
         metadata: { userId },
       });
     }
@@ -87,7 +104,7 @@ export const handler: Handler = async (event) => {
       headers,
       body: JSON.stringify({ 
         message: error instanceof Error ? error.message : 'Failed to create payment intent',
-        error: process.env.NODE_ENV === 'development' ? error : undefined,
+        error: import.meta.env.DEV ? error : undefined,
       }),
     };
   }
