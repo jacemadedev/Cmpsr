@@ -10,14 +10,19 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
 });
 
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.VITE_SUPABASE_ANON_KEY!
+// Initialize Supabase client
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
 );
 
 export const handler: Handler = async (event) => {
-  console.log('Received request:', event.httpMethod, event.body);
-
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -26,6 +31,18 @@ export const handler: Handler = async (event) => {
   };
 
   try {
+    // Validate environment variables
+    if (!process.env.STRIPE_SECRET_KEY || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('Missing required environment variables');
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({ 
+          error: 'Server configuration error' 
+        })
+      };
+    }
+
     if (event.httpMethod === 'OPTIONS') {
       return { statusCode: 204, headers, body: '' };
     }
@@ -34,30 +51,41 @@ export const handler: Handler = async (event) => {
       return {
         statusCode: 405,
         headers,
-        body: JSON.stringify({ message: 'Method not allowed' }),
+        body: JSON.stringify({ error: 'Method not allowed' })
       };
     }
 
-    const { priceId, userId } = JSON.parse(event.body || '{}');
-    console.log('Parsed request body:', { priceId, userId });
+    // Parse and validate request body
+    let priceId, userId;
+    try {
+      const parsedBody = JSON.parse(event.body || '{}');
+      priceId = parsedBody.priceId;
+      userId = parsedBody.userId;
+    } catch (e) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: 'Invalid request body' })
+      };
+    }
 
     if (!priceId || !userId) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ message: 'Missing required parameters' }),
+        body: JSON.stringify({ error: 'Missing required parameters' })
       };
     }
 
-    // Get user from Supabase
-    const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+    // Get user
+    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
     
-    if (userError || !userData?.user?.email) {
+    if (userError || !userData?.user) {
       console.error('User error:', userError);
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ message: 'User not found' }),
+        body: JSON.stringify({ error: 'User not found' })
       };
     }
 
@@ -107,14 +135,12 @@ export const handler: Handler = async (event) => {
     };
   } catch (error) {
     console.error('Payment intent error:', error);
-    
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({ 
-        message: error instanceof Error ? error.message : 'Failed to create payment intent',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }),
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      })
     };
   }
 }; 
