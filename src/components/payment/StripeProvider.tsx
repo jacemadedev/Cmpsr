@@ -45,20 +45,16 @@ const appearance: Appearance = {
 
 interface StripeProviderProps {
   children: ReactNode;
+  amount?: number;
 }
 
-export function StripeProvider({ children }: StripeProviderProps) {
+export function StripeProvider({ children, amount = 1000 }: StripeProviderProps) {
   const options = {
     appearance,
     mode: 'payment' as const,
     currency: 'usd',
-    amount: 1000,
+    amount,
     payment_method_types: ['card'],
-    loader: 'auto' as const,
-    wallets: {
-      applePay: 'never',
-      googlePay: 'never',
-    },
   };
 
   return (

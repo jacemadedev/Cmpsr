@@ -11,128 +11,60 @@ const supabase = createClient(
   process.env.VITE_SUPABASE_ANON_KEY!
 );
 
-const handler: Handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
-  }
-
-  const sig = event.headers['stripe-signature'];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-  if (!sig || !webhookSecret) {
-    return { 
-      statusCode: 400, 
-      body: JSON.stringify({ error: 'Missing signature or webhook secret' })
-    };
-  }
+export const handler: Handler = async (event) => {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 
   try {
     const stripeEvent = stripe.webhooks.constructEvent(
       event.body!,
-      sig,
-      webhookSecret
+      event.headers['stripe-signature']!,
+      process.env.STRIPE_WEBHOOK_SECRET!
     );
 
+    console.log('Webhook event:', stripeEvent.type);
+
     switch (stripeEvent.type) {
-      case 'payment_intent.succeeded': {
+      case 'payment_intent.succeeded':
         const paymentIntent = stripeEvent.data.object as Stripe.PaymentIntent;
-        const { userId, priceId } = paymentIntent.metadata;
+        const userId = paymentIntent.metadata.userId;
+        const priceId = paymentIntent.metadata.priceId;
 
-        const planId = getPlanIdFromPriceId(priceId);
-        const tokenLimit = getTokenLimitFromPlanId(planId);
-
-        const subscription = await stripe.subscriptions.create({
-          customer: paymentIntent.customer as string,
-          items: [{ price: priceId }],
-          metadata: { userId },
-        });
-
+        // Update subscription in your database
         const { error } = await supabase
           .from('subscriptions')
           .upsert({
             user_id: userId,
-            stripe_customer_id: paymentIntent.customer,
-            stripe_subscription_id: subscription.id,
-            plan_id: planId,
+            stripe_customer_id: paymentIntent.customer as string,
+            stripe_subscription_id: paymentIntent.id,
+            price_id: priceId,
             status: 'active',
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-            token_limit: tokenLimit,
-            tokens_used: 0
+            current_period_end: new Date(
+              Date.now() + 30 * 24 * 60 * 60 * 1000
+            ).toISOString(),
           });
 
         if (error) throw error;
         break;
-      }
 
-      case 'customer.subscription.updated': {
-        const subscription = stripeEvent.data.object as Stripe.Subscription;
-        const priceId = subscription.items.data[0].price.id;
-        const planId = getPlanIdFromPriceId(priceId);
-        const tokenLimit = getTokenLimitFromPlanId(planId);
-
-        const { error } = await supabase
-          .from('subscriptions')
-          .update({
-            plan_id: planId,
-            status: subscription.status === 'active' ? 'active' : 'expired',
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-            token_limit: tokenLimit
-          })
-          .eq('stripe_subscription_id', subscription.id);
-
-        if (error) throw error;
-        break;
-      }
-
-      case 'customer.subscription.deleted': {
-        const subscription = stripeEvent.data.object as Stripe.Subscription;
-        
-        const { error } = await supabase
-          .from('subscriptions')
-          .update({
-            status: 'canceled',
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
-          })
-          .eq('stripe_subscription_id', subscription.id);
-
-        if (error) throw error;
-        break;
-      }
+      // Handle other events as needed
     }
 
     return {
       statusCode: 200,
+      headers,
       body: JSON.stringify({ received: true }),
     };
-  } catch (err) {
-    console.error('Webhook error:', err);
+  } catch (error) {
+    console.error('Webhook error:', error);
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: 'Webhook signature verification failed' }),
+      headers,
+      body: JSON.stringify({
+        message: error instanceof Error ? error.message : 'Webhook Error',
+      }),
     };
   }
 };
-
-function getPlanIdFromPriceId(priceId: string): string {
-  switch (priceId) {
-    case 'price_1QLvDIHMs7qfi0lLYpo5xibE':
-      return 'basic';
-    case 'price_1QLvDiHMs7qfi0lLODvkbRlX':
-      return 'pro';
-    default:
-      return 'free';
-  }
-}
-
-function getTokenLimitFromPlanId(planId: string): number {
-  switch (planId) {
-    case 'basic':
-      return 100000;
-    case 'pro':
-      return 500000;
-    default:
-      return 10000;
-  }
-}
-
-export { handler };

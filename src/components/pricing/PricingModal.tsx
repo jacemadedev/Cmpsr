@@ -160,7 +160,7 @@ export function PricingModal({ isOpen, onClose, currentPlan = 'free' }: PricingM
         {/* Content */}
         <div className="p-6">
           {selectedPlan ? (
-            <StripeProvider>
+            <StripeProvider amount={selectedPlan?.price ? selectedPlan.price * 100 : undefined}>
               <PaymentForm
                 plan={selectedPlan}
                 onSuccess={handlePaymentSuccess}
