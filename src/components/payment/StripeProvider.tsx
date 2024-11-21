@@ -55,7 +55,6 @@ export function StripeProvider({ children, amount = 1000 }: StripeProviderProps)
     currency: 'usd',
     amount,
     loader: 'auto' as const,
-    testMode: true,
   };
 
   return (

@@ -54,11 +54,6 @@ const PaymentFormContent: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
         clientSecret,
         confirmParams: {
           return_url: `${window.location.origin}/dashboard?success=true`,
-          payment_method_data: {
-            billing_details: {
-              email: user.email || undefined,
-            },
-          },
         },
       });
 

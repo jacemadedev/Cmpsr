@@ -127,29 +127,25 @@ export const handler: Handler = async (event) => {
       throw new Error('Invalid price');
     }
 
-    // Create subscription
-    const subscription = await stripe.subscriptions.create({
+    // Create a payment intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: price.unit_amount,
+      currency: 'usd',
       customer: customer.id,
-      items: [{ price: priceId }],
-      payment_behavior: 'default_incomplete',
-      payment_settings: { save_default_payment_method: 'on_subscription' },
+      automatic_payment_methods: {
+        enabled: true,
+      },
       metadata: {
         userId,
+        priceId,
       },
-      expand: ['latest_invoice.payment_intent'],
     });
-
-    // Get the client secret from the subscription's invoice payment intent
-    const clientSecret = (
-      subscription.latest_invoice as Stripe.Invoice
-    ).payment_intent as Stripe.PaymentIntent;
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        clientSecret: clientSecret.client_secret,
-        subscriptionId: subscription.id,
+        clientSecret: paymentIntent.client_secret,
       }),
     };
   } catch (error) {
