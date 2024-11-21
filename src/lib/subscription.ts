@@ -16,7 +16,9 @@ export const getSubscription = async (userId: string): Promise<UserSubscription 
       throw error;
     }
 
-    return subscriptions?.[0] || null;
+    const subscription = subscriptions?.[0] || null;
+    console.log('Fetched subscription for user:', userId, subscription);
+    return subscription;
   } catch (error) {
     console.error('Error in getSubscription:', error);
     throw error;

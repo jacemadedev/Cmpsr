@@ -33,6 +33,7 @@ export function Dashboard() {
           getSubscription(userData.id),
         ]);
 
+        console.log('Dashboard loaded subscription:', subscriptionData);
         setItems(historyData);
         setSubscription(subscriptionData);
 
@@ -41,7 +42,7 @@ export function Dashboard() {
           setShowPricing(true);
         }
       } catch (err) {
-        console.error(err);
+        console.error('Failed to load dashboard data:', err);
         setError('Failed to load dashboard data');
       } finally {
         setLoading(false);
@@ -49,6 +50,18 @@ export function Dashboard() {
     };
 
     loadData();
+
+    // Poll for subscription updates
+    const intervalId = setInterval(async () => {
+      try {
+        const subscriptionData = await getSubscription(userData.id);
+        setSubscription(subscriptionData);
+      } catch (err) {
+        console.error('Failed to update subscription:', err);
+      }
+    }, 5000);
+
+    return () => clearInterval(intervalId);
   }, [userData]);
 
   if (loading) {
@@ -90,18 +103,18 @@ export function Dashboard() {
         </div>
 
         <PricingBanner
-          tokensLeft={subscription?.tokenLimit || 10000}
-          tokenLimit={subscription?.tokenLimit || 10000}
+          tokensLeft={subscription?.token_limit || 10000}
+          tokenLimit={subscription?.token_limit || 10000}
           onUpgrade={() => setShowPricing(true)}
         />
 
         <SubscriptionCard
-          currentPlan={subscription?.planId || 'free'}
+          currentPlan={subscription?.plan_id || 'free'}
           onUpgrade={() => setShowPricing(true)}
         />
 
         <div className="mb-8">
-          <Stats />
+          <Stats subscription={subscription} />
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

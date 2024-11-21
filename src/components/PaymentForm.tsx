@@ -1,28 +1,25 @@
 import { useState } from 'react';
 import { useUser } from '../hooks/useUser';
-import { usePayment } from '../hooks/usePayment';
-import { Plan } from '../types/plan';
-import { useStripe, useElements, PaymentElement } from '@stripe/react-stripe-js';
-import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
-import type { StripePaymentElementOptions } from '@stripe/stripe-js';
+import type { PricingPlan } from '@/lib/types';
 
 interface PaymentFormProps {
-  selectedPlan: Plan | null;
+  selectedPlan: PricingPlan | null;
 }
 
-const PaymentFormContent: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
+export function PaymentForm({ selectedPlan }: PaymentFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { user } = useUser();
-  const { createPaymentIntent } = usePayment({ selectedPlan });
-  const stripe = useStripe();
-  const elements = useElements();
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    
-    if (!stripe || !elements) {
-      setError('Stripe has not been initialized');
+  const handleCheckout = async () => {
+    if (!user) {
+      setError('Please log in to continue');
+      return;
+    }
+
+    if (!selectedPlan?.stripePriceId) {
+      setError('Invalid plan selected. Please try again.');
+      console.error('Missing stripePriceId for plan:', selectedPlan);
       return;
     }
 
@@ -30,43 +27,44 @@ const PaymentFormContent: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
     setError(null);
 
     try {
-      if (!user) {
-        throw new Error('Please log in first');
-      }
-
-      if (!selectedPlan) {
-        throw new Error('Please select a plan');
-      }
-
-      const { clientSecret } = await createPaymentIntent();
-      
-      if (!clientSecret) {
-        throw new Error('Failed to initialize payment');
-      }
-
-      const { error: submitError } = await elements.submit();
-      if (submitError) {
-        throw submitError;
-      }
-
-      const { error: confirmError } = await stripe.confirmPayment({
-        elements,
-        clientSecret,
-        confirmParams: {
-          return_url: `${window.location.origin}/dashboard?success=true`,
-        },
+      console.log('Creating checkout session for:', {
+        userId: user.id,
+        priceId: selectedPlan.stripePriceId,
+        planName: selectedPlan.name
       });
 
-      if (confirmError) {
-        throw confirmError;
+      const response = await fetch('/.netlify/functions/create-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceId: selectedPlan.stripePriceId,
+          userId: user.id,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
 
-    } catch (error) {
-      console.error('Payment error:', error);
+      const { url, error: checkoutError } = data;
+
+      if (checkoutError || !url) {
+        throw new Error(checkoutError || 'Failed to create checkout session');
+      }
+
+      // Redirect to Stripe Checkout
+      console.log('Redirecting to checkout:', url);
+      window.location.href = url;
+    } catch (err) {
+      console.error('Checkout error:', err);
       setError(
-        error instanceof Error 
-          ? error.message 
-          : 'An error occurred while processing your payment'
+        err instanceof Error 
+          ? err.message 
+          : 'Failed to initialize checkout'
       );
     } finally {
       setIsLoading(false);
@@ -74,29 +72,27 @@ const PaymentFormContent: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-4">
-        <PaymentElement 
-          options={{
-            layout: 'tabs',
-            defaultValues: {
-              billingDetails: {
-                email: user?.email || undefined,
-              }
-            }
-          } as StripePaymentElementOptions}
-        />
-        
-        {error && (
-          <div className="rounded-md bg-red-50 p-4 text-sm text-red-500" role="alert">
-            {error}
-          </div>
+    <div className="space-y-6">
+      {error && (
+        <div className="rounded-md bg-red-50 p-4 text-sm text-red-500" role="alert">
+          {error}
+        </div>
+      )}
+
+      <div className="text-sm text-gray-600 dark:text-gray-400">
+        {selectedPlan ? (
+          <p>
+            You selected the <strong>{selectedPlan.name}</strong> plan at{' '}
+            <strong>${selectedPlan.price}/month</strong>
+          </p>
+        ) : (
+          <p>Please select a plan to continue</p>
         )}
       </div>
 
-      <button 
-        type="submit" 
-        disabled={isLoading || !stripe || !elements}
+      <button
+        onClick={handleCheckout}
+        disabled={isLoading || !user || !selectedPlan?.stripePriceId}
         className="w-full rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700 disabled:bg-gray-400"
       >
         {isLoading ? (
@@ -108,31 +104,13 @@ const PaymentFormContent: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
             Processing...
           </span>
         ) : (
-          'Pay Now'
+          'Upgrade Now'
         )}
       </button>
-    </form>
-  );
-};
 
-const ErrorFallback: React.FC<FallbackProps> = ({ error }) => (
-  <div className="error-container">
-    <h2>Something went wrong with the payment form</h2>
-    <pre>{error.message}</pre>
-    <button onClick={() => window.location.reload()}>Try again</button>
-  </div>
-);
-
-export const PaymentForm: React.FC<PaymentFormProps> = (props) => {
-  return (
-    <ErrorBoundary
-      FallbackComponent={ErrorFallback}
-      onError={(error: Error) => {
-        console.error('Payment form error:', error);
-        // You might want to log this to your error tracking service
-      }}
-    >
-      <PaymentFormContent {...props} />
-    </ErrorBoundary>
+      <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+        Secure payment powered by Stripe
+      </p>
+    </div>
   );
-}; 
+} 

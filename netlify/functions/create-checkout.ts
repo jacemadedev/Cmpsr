@@ -8,94 +8,96 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL!,
-  process.env.VITE_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 const handler: Handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ message: 'Method Not Allowed' }),
-    };
-  }
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 
   try {
-    const { priceId, userId, returnUrl } = JSON.parse(event.body || '{}');
+    if (event.httpMethod !== 'POST') {
+      return {
+        statusCode: 405,
+        headers,
+        body: JSON.stringify({ error: 'Method not allowed' })
+      };
+    }
 
-    if (!priceId || !userId || !returnUrl) {
+    const { priceId, userId } = JSON.parse(event.body || '{}');
+
+    if (!priceId || !userId) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ message: 'Missing required parameters' }),
+        headers,
+        body: JSON.stringify({ error: 'Missing required parameters' })
       };
     }
 
-    // Check if user exists
-    const { data: user, error: userError } = await supabase
-      .from('auth.users')
-      .select('id, email')
-      .eq('id', userId)
-      .single();
-
-    if (userError || !user) {
+    // Get user
+    const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+    
+    if (userError || !userData?.user) {
       return {
-        statusCode: 404,
-        body: JSON.stringify({ message: 'User not found' }),
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: 'User not found' })
       };
     }
 
-    // Get or create Stripe customer
-    let customerId: string;
-    const { data: subscription } = await supabase
-      .from('subscriptions')
-      .select('stripe_customer_id')
-      .eq('user_id', userId)
-      .single();
-
-    if (subscription?.stripe_customer_id) {
-      customerId = subscription.stripe_customer_id;
+    // Create or get customer
+    let customer;
+    const customers = await stripe.customers.list({ email: userData.user.email });
+    
+    if (customers.data.length > 0) {
+      customer = customers.data[0];
     } else {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        metadata: {
-          userId: userId,
-        },
+      customer = await stripe.customers.create({
+        email: userData.user.email,
+        metadata: { userId },
       });
-      customerId = customer.id;
     }
 
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      payment_method_types: ['card'],
-      customer: customerId,
-      client_reference_id: userId,
+      customer: customer.id,
       line_items: [
         {
           price: priceId,
           quantity: 1,
         },
       ],
-      success_url: `${returnUrl}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${returnUrl}/dashboard?canceled=true`,
+      mode: 'subscription',
+      success_url: `${event.headers.origin}/dashboard?success=true`,
+      cancel_url: `${event.headers.origin}/dashboard?canceled=true`,
+      metadata: {
+        userId,
+        priceId,
+      },
       subscription_data: {
         metadata: {
-          userId: userId,
+          userId,
+          priceId,
         },
       },
-      allow_promotion_codes: true,
     });
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ sessionId: session.id }),
+      headers,
+      body: JSON.stringify({ url: session.url })
     };
+
   } catch (error) {
-    console.error('Stripe error:', error);
+    console.error('Error:', error);
     return {
       statusCode: 500,
+      headers,
       body: JSON.stringify({ 
-        message: error instanceof Error ? error.message : 'Failed to create checkout session'
-      }),
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      })
     };
   }
 };

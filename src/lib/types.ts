@@ -36,21 +36,24 @@ export interface PricingPlan {
   name: string;
   description: string;
   price: number;
-  interval: 'monthly' | 'yearly';
-  features: string[];
+  interval: string;
   tokenLimit: number;
-  highlighted?: boolean;
+  features: string[];
   stripePriceId: string | null;
+  highlighted?: boolean;
 }
 
 export interface UserSubscription {
-  planId: string;
+  id: string;
+  user_id: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  price_id: string;
+  plan_id: string;
   status: 'active' | 'canceled' | 'expired';
-  currentPeriodEnd: string;
-  tokenLimit: number;
-  tokensUsed: number;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
+  current_period_end: string;
+  token_limit: number;
+  tokens_used: number;
 }
 
 export interface Subscription {

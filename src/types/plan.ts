@@ -1,7 +1,10 @@
 export interface Plan {
   id: string;
   name: string;
-  priceId: string;
+  description: string;
   price: number;
-  // Add other plan properties as needed
+  priceId: string;
+  tokenLimit: number;
+  features: string[];
+  highlighted?: boolean;
 } 
