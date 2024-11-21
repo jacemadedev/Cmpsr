@@ -32,10 +32,21 @@ export const handler: Handler = async (event) => {
         const userId = paymentIntent.metadata.userId;
         const priceId = paymentIntent.metadata.priceId;
 
-        // Update subscription in your database
-        const { error } = await supabase
+        // First, deactivate any existing subscriptions
+        const { error: deactivateError } = await supabase
           .from('subscriptions')
-          .upsert({
+          .update({ status: 'inactive' })
+          .eq('user_id', userId)
+          .eq('status', 'active');
+
+        if (deactivateError) {
+          console.error('Error deactivating old subscriptions:', deactivateError);
+        }
+
+        // Then create new subscription
+        const { error: insertError } = await supabase
+          .from('subscriptions')
+          .insert({
             user_id: userId,
             stripe_customer_id: paymentIntent.customer as string,
             stripe_subscription_id: paymentIntent.id,
@@ -46,7 +57,10 @@ export const handler: Handler = async (event) => {
             ).toISOString(),
           });
 
-        if (error) throw error;
+        if (insertError) {
+          console.error('Error creating new subscription:', insertError);
+          throw insertError;
+        }
         break;
 
       // Handle other events as needed
