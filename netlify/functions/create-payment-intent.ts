@@ -13,24 +13,23 @@ export const handler: Handler = async (event) => {
     'Content-Type': 'application/json',
   };
 
-  // Handle preflight requests
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 204,
-      headers,
-      body: '',
-    };
-  }
-
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ message: 'Method not allowed' }),
-    };
-  }
-
   try {
+    if (event.httpMethod === 'OPTIONS') {
+      return { statusCode: 204, headers, body: '' };
+    }
+
+    if (event.httpMethod !== 'POST') {
+      return {
+        statusCode: 405,
+        headers,
+        body: JSON.stringify({ message: 'Method not allowed' }),
+      };
+    }
+
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error('Missing STRIPE_SECRET_KEY');
+    }
+
     const { priceId, userId } = JSON.parse(event.body || '{}');
 
     if (!priceId || !userId) {
@@ -43,7 +42,7 @@ export const handler: Handler = async (event) => {
 
     // Get price from Stripe
     const price = await stripe.prices.retrieve(priceId);
-    if (!price.unit_amount) {
+    if (!price?.unit_amount) {
       throw new Error('Invalid price');
     }
 
@@ -59,7 +58,6 @@ export const handler: Handler = async (event) => {
       });
     }
 
-    // Create payment intent
     const paymentIntent = await stripe.paymentIntents.create({
       amount: price.unit_amount,
       currency: 'usd',
@@ -88,7 +86,8 @@ export const handler: Handler = async (event) => {
       statusCode: 500,
       headers,
       body: JSON.stringify({ 
-        message: error instanceof Error ? error.message : 'Failed to create payment intent'
+        message: error instanceof Error ? error.message : 'Failed to create payment intent',
+        error: process.env.NODE_ENV === 'development' ? error : undefined,
       }),
     };
   }

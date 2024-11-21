@@ -24,8 +24,12 @@ export const useAuth = create<AuthState>((set) => ({
       
       if (!error && data.user) {
         set({ user: data.user });
-        // Ensure user has a subscription
-        await getSubscription(data.user.id);
+        try {
+          await getSubscription(data.user.id);
+        } catch (err) {
+          console.error('Failed to get subscription:', err);
+          // Don't throw error here, allow sign in to succeed
+        }
       }
       return { error };
     } catch (error) {
@@ -37,16 +41,20 @@ export const useAuth = create<AuthState>((set) => ({
       const { error, data } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        }
       });
 
       if (!error && data.user) {
+        set({ user: data.user });
         try {
           await getSubscription(data.user.id);
-          set({ user: data.user });
           return { error: null, user: data.user };
         } catch (subscriptionError) {
           console.error('Failed to create initial subscription:', subscriptionError);
-          return { error: subscriptionError as Error, user: null };
+          // Don't throw error here, allow sign up to succeed
+          return { error: null, user: data.user };
         }
       }
       return { error, user: null };
@@ -61,11 +69,10 @@ export const useAuth = create<AuthState>((set) => ({
   setUser: (user) => set({ user, loading: false }),
 }));
 
-// Get the set function from useAuth store
-const { setUser } = useAuth.getState();
-
 // Initialize auth state
-supabase.auth.onAuthStateChange(async (event, session) => {
+supabase.auth.onAuthStateChange((event, session) => {
+  const { setUser } = useAuth.getState();
+  
   if (event === 'SIGNED_IN' && session?.user) {
     setUser(session.user);
   } else if (event === 'SIGNED_OUT') {
@@ -77,9 +84,6 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 
 // Initial session check
 supabase.auth.getSession().then(({ data: { session } }) => {
-  if (session?.user) {
-    setUser(session.user);
-  } else {
-    setUser(null);
-  }
+  const { setUser } = useAuth.getState();
+  setUser(session?.user || null);
 });
