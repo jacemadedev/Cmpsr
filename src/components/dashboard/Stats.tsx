@@ -2,13 +2,15 @@ import { Brain, Clock, Gauge } from 'lucide-react';
 import { StatsCard } from './StatsCard';
 import { useAuth } from '@/lib/auth';
 import { useEffect, useState } from 'react';
-import { getSubscription } from '@/lib/subscription';
-import { useStore } from '@/lib/store';
+import { getSubscription } from '../../lib/subscription';
+import type { UserSubscription } from '@/lib/types';
 import { pricingPlans } from '@/lib/pricing';
+
+const DEFAULT_TOKEN_LIMIT = 10000;
 
 export function Stats() {
   const { user } = useAuth();
-  const { subscription, setSubscription } = useStore();
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +51,7 @@ export function Stats() {
       mounted = false;
       if (intervalId) window.clearInterval(intervalId);
     };
-  }, [user, setSubscription]);
+  }, [user]);
 
   if (loading) {
     return (
@@ -74,15 +76,12 @@ export function Stats() {
     );
   }
 
-  if (!subscription) {
-    return (
-      <div className="rounded-lg bg-yellow-50 p-4 text-yellow-600 dark:bg-yellow-900/20 dark:text-yellow-400">
-        No active subscription found. Please select a plan to continue.
-      </div>
-    );
-  }
+  // Use default values if subscription is null
+  const tokenLimit = subscription?.tokenLimit ?? DEFAULT_TOKEN_LIMIT;
+  const tokensUsed = subscription?.tokensUsed ?? 0;
+  const currentPeriodEnd = subscription?.currentPeriodEnd ?? new Date().toISOString();
+  const planId = subscription?.planId ?? 'free';
 
-  const { tokenLimit, tokensUsed, currentPeriodEnd, planId } = subscription;
   const tokensLeft = Math.max(0, tokenLimit - tokensUsed);
   const usagePercentage = Math.min(100, (tokensUsed / tokenLimit) * 100);
   const plan = pricingPlans.find((p) => p.id === planId);
@@ -100,7 +99,7 @@ export function Stats() {
       <StatsCard
         title="Monthly Usage"
         value={`${tokensUsed.toLocaleString()} / ${tokenLimit.toLocaleString()}`}
-        description={`${usagePercentage.toFixed(1)}% of your ${plan?.name || ''} plan limit`}
+        description={`${usagePercentage.toFixed(1)}% of your ${plan?.name || 'Free'} plan limit`}
         icon={Brain}
         trend={tokensUsed > tokenLimit * 0.8 ? 'down' : 'up'}
         progress={usagePercentage}
@@ -115,7 +114,7 @@ export function Stats() {
       <StatsCard
         title="Current Plan"
         value={plan?.name || 'Free'}
-        description={`${plan?.tokenLimit.toLocaleString()} tokens per month`}
+        description={`${tokenLimit.toLocaleString()} tokens per month`}
         icon={Clock}
         trend={plan?.highlighted ? 'up' : undefined}
         badge={plan?.highlighted ? 'Popular' : undefined}

@@ -27,10 +27,15 @@ export const handler: Handler = async (event) => {
     console.log('Webhook event:', stripeEvent.type);
 
     switch (stripeEvent.type) {
-      case 'payment_intent.succeeded':
-        const paymentIntent = stripeEvent.data.object as Stripe.PaymentIntent;
-        const userId = paymentIntent.metadata.userId;
-        const priceId = paymentIntent.metadata.priceId;
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        const subscription = stripeEvent.data.object as Stripe.Subscription;
+        const userId = subscription.metadata.userId;
+        const priceId = subscription.items.data[0].price.id;
+
+        // Get price details from Stripe
+        const price = await stripe.prices.retrieve(priceId);
+        const product = await stripe.products.retrieve(price.product as string);
 
         // First, deactivate any existing subscriptions
         const { error: deactivateError } = await supabase
@@ -43,27 +48,55 @@ export const handler: Handler = async (event) => {
           console.error('Error deactivating old subscriptions:', deactivateError);
         }
 
+        // Calculate token limit based on the plan
+        const tokenLimit = product.metadata.token_limit ? 
+          parseInt(product.metadata.token_limit) : 
+          10000;
+
         // Then create new subscription
         const { error: insertError } = await supabase
           .from('subscriptions')
           .insert({
             user_id: userId,
-            stripe_customer_id: paymentIntent.customer as string,
-            stripe_subscription_id: paymentIntent.id,
+            stripe_customer_id: subscription.customer as string,
+            stripe_subscription_id: subscription.id,
             price_id: priceId,
-            status: 'active',
-            current_period_end: new Date(
-              Date.now() + 30 * 24 * 60 * 60 * 1000
-            ).toISOString(),
+            plan_id: product.id,
+            status: subscription.status === 'active' ? 'active' : 'incomplete',
+            token_limit: tokenLimit,
+            tokens_used: 0,
+            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
           });
 
         if (insertError) {
           console.error('Error creating new subscription:', insertError);
           throw insertError;
         }
+
+        console.log('Successfully updated subscription for user:', userId, {
+          plan: product.name,
+          tokenLimit,
+          priceId,
+          status: subscription.status
+        });
+
         break;
 
-      // Handle other events as needed
+      case 'customer.subscription.deleted':
+        const deletedSubscription = stripeEvent.data.object as Stripe.Subscription;
+
+        const { error: updateError } = await supabase
+          .from('subscriptions')
+          .update({ status: 'canceled' })
+          .eq('stripe_subscription_id', deletedSubscription.id);
+
+        if (updateError) {
+          console.error('Error updating subscription status:', updateError);
+          throw updateError;
+        }
+
+        console.log('Successfully canceled subscription:', deletedSubscription.id);
+        break;
     }
 
     return {

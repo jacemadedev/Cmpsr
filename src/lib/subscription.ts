@@ -1,67 +1,52 @@
 import { supabase } from './supabase';
 import type { UserSubscription } from './types';
 
-export async function getSubscription(userId: string): Promise<UserSubscription | null> {
+export const getSubscription = async (userId: string): Promise<UserSubscription | null> => {
   try {
-    // First try to get existing subscription
-    const { data: existingData, error: fetchError } = await supabase
+    const { data: subscriptions, error } = await supabase
       .from('subscriptions')
       .select('*')
       .eq('user_id', userId)
-      .maybeSingle();
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1);
 
-    if (fetchError) throw fetchError;
-
-    // If subscription exists, return it
-    if (existingData) {
-      return {
-        planId: existingData.plan_id,
-        status: existingData.status,
-        currentPeriodEnd: existingData.current_period_end,
-        tokenLimit: existingData.token_limit,
-        tokensUsed: existingData.tokens_used || 0,
-        stripeCustomerId: existingData.stripe_customer_id,
-        stripeSubscriptionId: existingData.stripe_subscription_id,
-      };
+    if (error) {
+      console.error('Error fetching subscription:', error);
+      throw error;
     }
 
-    // If no subscription exists, create a new free subscription
-    const nextMonth = new Date();
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-    nextMonth.setHours(0, 0, 0, 0); // Reset to start of day
-
-    const { data: newData, error: insertError } = await supabase
-      .from('subscriptions')
-      .insert([
-        {
-          user_id: userId,
-          plan_id: 'free',
-          status: 'active',
-          current_period_end: nextMonth.toISOString(),
-          token_limit: 10000,
-          tokens_used: 0,
-        },
-      ])
-      .select()
-      .single();
-
-    if (insertError) throw insertError;
-    if (!newData) throw new Error('Failed to create subscription');
-
-    return {
-      planId: newData.plan_id,
-      status: newData.status,
-      currentPeriodEnd: newData.current_period_end,
-      tokenLimit: newData.token_limit,
-      tokensUsed: newData.tokens_used || 0,
-      stripeCustomerId: newData.stripe_customer_id,
-      stripeSubscriptionId: newData.stripe_subscription_id,
-    };
+    return subscriptions?.[0] || null;
   } catch (error) {
-    console.error('Failed to fetch/create subscription:', error);
+    console.error('Error in getSubscription:', error);
     throw error;
   }
-}
+};
+
+export const updateSubscription = async (userId: string, subscription: Partial<UserSubscription>) => {
+  try {
+    // First, deactivate all existing active subscriptions
+    await supabase
+      .from('subscriptions')
+      .update({ status: 'inactive' })
+      .eq('user_id', userId)
+      .eq('status', 'active');
+
+    // Then create the new subscription
+    const { error } = await supabase
+      .from('subscriptions')
+      .insert({
+        user_id: userId,
+        ...subscription,
+        status: 'active',
+      });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error updating subscription:', error);
+    throw error;
+  }
+};
 
 export async function updateTokenUsage(userId: string, tokensUsed: number): Promise<void> {
   try {

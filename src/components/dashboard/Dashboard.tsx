@@ -8,28 +8,29 @@ import { PricingModal } from '../pricing/PricingModal';
 import { SubscriptionCard } from './SubscriptionCard';
 import { getHistory } from '@/lib/history';
 import { getSubscription } from '@/lib/subscription';
-import { useAuth } from '@/lib/auth';
 import { useNavigate } from '@/lib/navigate';
-import type { HistoryItem, Subscription } from '@/lib/types';
+import type { HistoryItem } from '@/lib/types';
 import { AlertCircle } from 'lucide-react';
+import { useUser } from '../../hooks/useUser';
+import type { UserSubscription } from '@/lib/types';
 
 export function Dashboard() {
   const [items, setItems] = useState<HistoryItem[]>([]);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPricing, setShowPricing] = useState(false);
-  const { user } = useAuth();
   const { currentPage } = useNavigate();
+  const { user: userData } = useUser();
 
   useEffect(() => {
-    if (!user) return;
+    if (!userData) return;
 
     const loadData = async () => {
       try {
         const [historyData, subscriptionData] = await Promise.all([
-          getHistory(user.id),
-          getSubscription(user.id),
+          getHistory(userData.id),
+          getSubscription(userData.id),
         ]);
 
         setItems(historyData);
@@ -48,7 +49,7 @@ export function Dashboard() {
     };
 
     loadData();
-  }, [user]);
+  }, [userData]);
 
   if (loading) {
     return (
