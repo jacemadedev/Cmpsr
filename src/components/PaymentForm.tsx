@@ -53,7 +53,7 @@ const PaymentFormContent: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
         elements,
         clientSecret,
         confirmParams: {
-          return_url: `${window.location.origin}/payment-success`,
+          return_url: `${window.location.origin}/dashboard?success=true`,
           payment_method_data: {
             billing_details: {
               email: user.email || undefined,
@@ -65,9 +65,6 @@ const PaymentFormContent: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
       if (confirmError) {
         throw confirmError;
       }
-
-      // The payment will be confirmed and redirected by Stripe
-      return;
 
     } catch (error) {
       console.error('Payment error:', error);
