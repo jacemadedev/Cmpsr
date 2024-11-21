@@ -1,0 +1,36 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/.netlify/functions/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["netlify/functions/**/*"]
+  external_node_modules = ["stripe"]
+
+[dev]
+  command = "npm run dev"
+  targetPort = 5173
+  port = 8888
+  publish = "dist"
+  functionsPort = 9999
+  framework = "#custom"
+  autoLaunch = true
+
+[[headers]]
+  for = "/*"
+    [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
