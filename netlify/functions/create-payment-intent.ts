@@ -127,7 +127,7 @@ export const handler: Handler = async (event) => {
       throw new Error('Invalid price');
     }
 
-    // Create payment intent with only automatic_payment_methods
+    // Create payment intent with automatic_payment_methods
     const paymentIntent = await stripe.paymentIntents.create({
       amount: price.unit_amount,
       currency: 'usd',
@@ -138,6 +138,7 @@ export const handler: Handler = async (event) => {
       },
       automatic_payment_methods: {
         enabled: true,
+        allow_redirects: 'always'
       },
     });
 

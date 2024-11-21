@@ -54,7 +54,8 @@ export function StripeProvider({ children, amount = 1000 }: StripeProviderProps)
     mode: 'payment' as const,
     currency: 'usd',
     amount,
-    payment_method_types: ['card'],
+    loader: 'auto' as const,
+    testMode: true,
   };
 
   return (
