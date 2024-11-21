@@ -3,12 +3,13 @@ import { useUser } from '../hooks/useUser';
 import { usePayment } from '../hooks/usePayment';
 import { Plan } from '../types/plan';
 import { useStripe, useElements } from '@stripe/react-stripe-js';
+import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
 
 interface PaymentFormProps {
   selectedPlan: Plan | null;
 }
 
-export const PaymentForm: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
+const PaymentFormContent: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { user } = useUser();
@@ -41,7 +42,6 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
         throw new Error('Failed to initialize payment');
       }
 
-      // Handle the payment confirmation here
       const { error: stripeError } = await stripe.confirmPayment({
         elements,
         clientSecret,
@@ -76,5 +76,27 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ selectedPlan }) => {
         {isLoading ? 'Processing...' : 'Pay Now'}
       </button>
     </form>
+  );
+};
+
+const ErrorFallback: React.FC<FallbackProps> = ({ error }) => (
+  <div className="error-container">
+    <h2>Something went wrong with the payment form</h2>
+    <pre>{error.message}</pre>
+    <button onClick={() => window.location.reload()}>Try again</button>
+  </div>
+);
+
+export const PaymentForm: React.FC<PaymentFormProps> = (props) => {
+  return (
+    <ErrorBoundary
+      FallbackComponent={ErrorFallback}
+      onError={(error: Error) => {
+        console.error('Payment form error:', error);
+        // You might want to log this to your error tracking service
+      }}
+    >
+      <PaymentFormContent {...props} />
+    </ErrorBoundary>
   );
 }; 

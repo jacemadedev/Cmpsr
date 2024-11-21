@@ -12,7 +12,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 
 // Initialize Supabase client
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
+  process.env.VITE_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   {
     auth: {
@@ -23,6 +23,20 @@ const supabaseAdmin = createClient(
 );
 
 export const handler: Handler = async (event) => {
+  console.log('Function started with event:', {
+    method: event.httpMethod,
+    headers: event.headers,
+    body: event.body
+  });
+
+  // Log all environment variables (without values)
+  console.log('Available environment variables:', {
+    STRIPE_SECRET_KEY: !!process.env.STRIPE_SECRET_KEY,
+    VITE_SUPABASE_URL: !!process.env.VITE_SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    NODE_ENV: process.env.NODE_ENV
+  });
+
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -32,13 +46,18 @@ export const handler: Handler = async (event) => {
 
   try {
     // Validate environment variables
-    if (!process.env.STRIPE_SECRET_KEY || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!process.env.STRIPE_SECRET_KEY || !process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       console.error('Missing required environment variables');
       return {
         statusCode: 500,
         headers,
         body: JSON.stringify({ 
-          error: 'Server configuration error' 
+          error: 'Server configuration error',
+          debug: {
+            stripe: !!process.env.STRIPE_SECRET_KEY,
+            supabaseUrl: !!process.env.VITE_SUPABASE_URL,
+            supabaseKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+          }
         })
       };
     }
@@ -108,7 +127,7 @@ export const handler: Handler = async (event) => {
       throw new Error('Invalid price');
     }
 
-    // Create payment intent
+    // Create payment intent with only automatic_payment_methods
     const paymentIntent = await stripe.paymentIntents.create({
       amount: price.unit_amount,
       currency: 'usd',
@@ -119,9 +138,7 @@ export const handler: Handler = async (event) => {
       },
       automatic_payment_methods: {
         enabled: true,
-        allow_redirects: 'never',
       },
-      payment_method_types: ['card'],
     });
 
     console.log('Created payment intent:', paymentIntent.id);
@@ -134,12 +151,17 @@ export const handler: Handler = async (event) => {
       }),
     };
   } catch (error) {
-    console.error('Payment intent error:', error);
+    console.error('Detailed error:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
+    
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        details: process.env.NODE_ENV === 'development' ? error : undefined
       })
     };
   }
